@@ -59,7 +59,16 @@ export async function GET(
     dbQuery = dbQuery.eq('discord_id', 'impossible_match')
   }
 
-  const { data: dbResult } = await dbQuery.maybeSingle()
+  let { data: dbResult } = await dbQuery.maybeSingle()
+
+  // Hardcoded exclusion for clovr (nagatesz) to bypass joke flagging
+  if (dbResult && (
+    dbResult.discord_id === '1086798921755525273' || 
+    (dbResult.roblox_username && dbResult.roblox_username.toLowerCase() === 'reiayanamifan1738') ||
+    (dbResult.username && dbResult.username.toLowerCase() === 'clovr')
+  )) {
+    dbResult = null
+  }
 
   // If DB found a record, update our identifiers if they were missing
   if (dbResult) {
