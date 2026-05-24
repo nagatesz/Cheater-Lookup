@@ -182,9 +182,9 @@ export default function GroupsPage() {
 
       setScanProgress(p => ({ ...p, current: i + 1 }))
 
-      // 1.5s delay for rate limiting
+      // 600ms delay for rate limiting (rotated across multiple keys)
       if (!stopRef.current && i < currentMembers.length - 1) {
-        await new Promise(r => setTimeout(r, 1500))
+        await new Promise(r => setTimeout(r, 600))
       }
     }
 

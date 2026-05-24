@@ -25,9 +25,18 @@ export type XTrackerResult = {
 
 const BASE = 'https://api.xtracker.xyz'
 
+let keyIndex = 0
+
 async function xtrackerFetch(endpoint: string, robloxId: string | number): Promise<XTrackerEntry[]> {
-  const apiKey = process.env.XTRACKER_API_KEY
-  if (!apiKey || apiKey === 'placeholder') return []
+  const rawApiKey = process.env.XTRACKER_API_KEY
+  if (!rawApiKey || rawApiKey === 'placeholder') return []
+
+  const apiKeys = rawApiKey.split(',').map(k => k.trim()).filter(Boolean)
+  if (apiKeys.length === 0) return []
+
+  // Rotate round-robin
+  const apiKey = apiKeys[keyIndex % apiKeys.length]
+  keyIndex++
 
   try {
     const res = await fetch(`${BASE}${endpoint}?id=${robloxId}`, {
