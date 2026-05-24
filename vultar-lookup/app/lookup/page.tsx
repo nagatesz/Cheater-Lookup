@@ -27,10 +27,10 @@ type LookupResult = {
 }
 
 const SEVERITY_CONFIG = {
-  low:      { label: 'LOW RISK',      color: 'text-green-400',  border: 'border-green-800',  bg: 'bg-green-950' },
-  medium:   { label: 'MEDIUM RISK',   color: 'text-yellow-400', border: 'border-yellow-800', bg: 'bg-yellow-950' },
-  high:     { label: 'HIGH RISK',     color: 'text-red-400',    border: 'border-red-800',    bg: 'bg-red-950' },
-  critical: { label: 'CRITICAL',      color: 'text-[#ff3333]',  border: 'border-[#ff3333]',  bg: 'bg-red-950', glow: true },
+  low:      { label: 'LOW RISK',      color: 'text-green-400',  border: 'border-green-800',  bg: 'bg-green-950',  glow: false },
+  medium:   { label: 'MEDIUM RISK',   color: 'text-yellow-400', border: 'border-yellow-800', bg: 'bg-yellow-950', glow: false },
+  high:     { label: 'HIGH RISK',     color: 'text-red-400',    border: 'border-red-800',    bg: 'bg-red-950',    glow: false },
+  critical: { label: 'CRITICAL',      color: 'text-[#ff3333]',  border: 'border-[#ff3333]',  bg: 'bg-red-950',    glow: true  },
 }
 
 export default function LookupPage() {
