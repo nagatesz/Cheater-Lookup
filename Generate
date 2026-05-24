@@ -1,0 +1,9 @@
+
+[ERROR] Push failed. Most likely causes:
+
+ 1. FIRST TIME PUSH - run this once manually:
+    git -C "C:\Users\nagat\Downloads\vultar-lookup" push -u origin main --force
+
+ 2. CREDENTIALS - GitHub now requires a token not your password.
+    Go to: github.com > Settings > Developer settings
+           > Personal access tokens > Tokens (classic
