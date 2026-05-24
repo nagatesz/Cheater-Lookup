@@ -8,6 +8,8 @@ import {
 
 export type LookupResult = {
   found: boolean
+  /** Scan could not confirm — rate limited or API error; not the same as clean */
+  inconclusive?: boolean
   discord_id?: string | null
   username?: string | null
   avatar_url?: string | null
@@ -44,7 +46,10 @@ function isClovrExclusion(dbResult: {
 }
 
 /** Full lookup for a Roblox user ID (clan scanner + batch API). */
-export async function lookupByRobloxId(robloxId: number): Promise<LookupResult> {
+export async function lookupByRobloxId(
+  robloxId: number,
+  workerSlot?: number
+): Promise<LookupResult> {
   let discordId: string | null = null
   let robloxUsername: string | null = null
 
@@ -81,7 +86,7 @@ export async function lookupByRobloxId(robloxId: number): Promise<LookupResult> 
   }
 
   const [xtrackerResult, discordInfo, robloxAvatarUrl] = await Promise.all([
-    lookupXTrackerByRobloxId(robloxId),
+    lookupXTrackerByRobloxId(robloxId, workerSlot),
     discordId ? resolveDiscordUser(discordId) : Promise.resolve({ username: null, avatar_url: null }),
     resolveRobloxAvatar(robloxId),
   ])
@@ -90,7 +95,13 @@ export async function lookupByRobloxId(robloxId: number): Promise<LookupResult> 
   const foundInXtracker = xtrackerResult.found
 
   if (!foundInDb && !foundInXtracker) {
-    return { found: false, roblox_id: robloxId, discord_id: discordId }
+    return {
+      found: false,
+      inconclusive: xtrackerResult.inconclusive,
+      roblox_id: robloxId,
+      discord_id: discordId,
+      roblox_username: robloxUsername,
+    }
   }
 
   const sources: string[] = []

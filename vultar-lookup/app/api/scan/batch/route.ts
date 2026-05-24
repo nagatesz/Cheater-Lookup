@@ -23,9 +23,9 @@ export async function POST(req: Request) {
   }
 
   const results = await Promise.all(
-    robloxIds.map(async roblox_id => ({
+    robloxIds.map(async (roblox_id, index) => ({
       roblox_id,
-      result: await lookupByRobloxId(roblox_id),
+      result: await lookupByRobloxId(roblox_id, index),
     }))
   )
 

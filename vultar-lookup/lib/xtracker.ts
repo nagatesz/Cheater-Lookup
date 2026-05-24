@@ -23,6 +23,8 @@ export type XTrackerResult = {
   entries: XTrackerEntry[]
   ownershipEntries: XTrackerEntry[]
   total: number
+  /** True when every key was rate-limited — do not treat as "clean" */
+  inconclusive: boolean
 }
 
 const BASE = 'https://api.xtracker.xyz'
@@ -47,7 +49,14 @@ export function getXTrackerKeyCount(): number {
   return getXTrackerApiKeys().length
 }
 
-/** Stable key pick per Roblox ID — spreads load across keys on serverless. */
+/** One dedicated API key per parallel worker slot (0–9). */
+export function pickApiKeyBySlot(slot: number, attempt = 0): string | null {
+  const keys = getXTrackerApiKeys()
+  if (keys.length === 0) return null
+  return keys[(slot + attempt) % keys.length]
+}
+
+/** Stable key pick per Roblox ID — used when no worker slot is provided. */
 function pickApiKey(robloxId: string | number, attempt = 0): string | null {
   const keys = getXTrackerApiKeys()
   if (keys.length === 0) return null
@@ -104,10 +113,10 @@ async function xtrackerFetch(
     if (!res.ok) {
       if (res.status === 404 || res.status === 204) {
         xtrackerCache.set(cacheKey, { data: [], timestamp: Date.now() })
-      } else {
-        console.warn(`XTracker ${endpoint} returned ${res.status}`)
+        return { entries: [], rateLimited: false }
       }
-      return { entries: [], rateLimited: false }
+      console.warn(`XTracker ${endpoint} returned ${res.status}`)
+      return { entries: [], rateLimited: res.status === 429 || res.status >= 500 }
     }
 
     const data = await res.json()
@@ -116,30 +125,35 @@ async function xtrackerFetch(
     return { entries: result, rateLimited: false }
   } catch (err) {
     console.error(`XTracker fetch failed (${endpoint}):`, err)
-    return { entries: [], rateLimited: false }
+    return { entries: [], rateLimited: true }
   }
 }
 
+type FetchRetryResult = { entries: XTrackerEntry[]; inconclusive: boolean }
+
 async function xtrackerFetchWithRetry(
   endpoint: string,
-  robloxId: string | number
-): Promise<XTrackerEntry[]> {
+  robloxId: string | number,
+  workerSlot?: number
+): Promise<FetchRetryResult> {
   const keyCount = getXTrackerKeyCount()
-  if (keyCount === 0) return []
+  if (keyCount === 0) return { entries: [], inconclusive: true }
 
   for (let attempt = 0; attempt < keyCount; attempt++) {
-    const apiKey = pickApiKey(robloxId, attempt)
-    if (!apiKey) return []
+    const apiKey =
+      workerSlot !== undefined
+        ? pickApiKeyBySlot(workerSlot, attempt)
+        : pickApiKey(robloxId, attempt)
+    if (!apiKey) return { entries: [], inconclusive: true }
 
     const { entries, rateLimited } = await xtrackerFetch(endpoint, robloxId, apiKey)
-    if (!rateLimited) return entries
+    if (!rateLimited) return { entries, inconclusive: false }
 
-    // Brief backoff before trying the next key in the pool
-    await new Promise(r => setTimeout(r, 150 * (attempt + 1)))
+    await new Promise(r => setTimeout(r, 200 * (attempt + 1)))
   }
 
   console.warn(`XTracker ${endpoint} rate-limited for all keys (id=${robloxId})`)
-  return []
+  return { entries: [], inconclusive: true }
 }
 
 export async function resolveRobloxId(username: string): Promise<number | null> {
@@ -188,19 +202,22 @@ export async function resolveRobloxAvatar(robloxId: number | string): Promise<st
   }
 }
 
-export async function lookupXTrackerByRobloxId(robloxId: string | number): Promise<XTrackerResult> {
-  const [registry, ownership] = await Promise.all([
-    xtrackerFetchWithRetry('/api/registry/user', robloxId),
-    xtrackerFetchWithRetry('/api/ownership/user', robloxId),
-  ])
+export async function lookupXTrackerByRobloxId(
+  robloxId: string | number,
+  workerSlot?: number
+): Promise<XTrackerResult> {
+  const registry = await xtrackerFetchWithRetry('/api/registry/user', robloxId, workerSlot)
+  await new Promise(r => setTimeout(r, 50))
+  const ownership = await xtrackerFetchWithRetry('/api/ownership/user', robloxId, workerSlot)
 
-  const allEntries = [...registry, ...ownership]
+  const allEntries = [...registry.entries, ...ownership.entries]
 
   return {
     found: allEntries.length > 0,
-    entries: registry,
-    ownershipEntries: ownership,
+    entries: registry.entries,
+    ownershipEntries: ownership.entries,
     total: allEntries.length,
+    inconclusive: registry.inconclusive && ownership.inconclusive,
   }
 }
 

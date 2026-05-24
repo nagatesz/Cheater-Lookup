@@ -49,17 +49,20 @@ export default function GroupsPage() {
   const stopRef = useRef(false)
   const membersRef = useRef<Member[]>([])
 
-  async function getScanWorkerCount(): Promise<number> {
+  async function getScanSettings(): Promise<{ concurrency: number; workerDelayMs: number }> {
     try {
       const res = await fetch('/api/scan/config', { cache: 'no-store' })
       if (res.ok) {
         const d = await res.json()
-        if (d.concurrency && d.concurrency > 0) return d.concurrency
+        return {
+          concurrency: d.concurrency > 0 ? d.concurrency : 10,
+          workerDelayMs: typeof d.workerDelayMs === 'number' ? d.workerDelayMs : 120,
+        }
       }
     } catch {
       /* use default */
     }
-    return 10
+    return { concurrency: 10, workerDelayMs: 120 }
   }
 
   // Keep membersRef in sync
@@ -175,19 +178,39 @@ export default function GroupsPage() {
     )
   }
 
-  async function scanMemberAtIndex(i: number) {
+  async function scanMemberAtIndex(i: number, workerSlot: number): Promise<boolean> {
     const member = membersRef.current[i]
-    if (!member || member.status !== 'pending') return
+    if (!member || member.status !== 'pending') return true
 
     updateMembers(prev => prev.map((m, idx) => (idx === i ? { ...m, status: 'checking' } : m)))
 
-    try {
-      const res = await fetch(`/api/lookup/${member.id}`, { cache: 'no-store' })
-      const data = await res.json()
-      applyLookupResult(i, data)
-    } catch {
-      updateMembers(prev => prev.map((m, idx) => (idx === i ? { ...m, status: 'clean' } : m)))
+    for (let attempt = 0; attempt < 4; attempt++) {
+      try {
+        const res = await fetch(`/api/lookup/${member.id}?worker=${workerSlot}`, {
+          cache: 'no-store',
+        })
+        const data = await res.json()
+
+        if (!res.ok) {
+          await new Promise(r => setTimeout(r, 250 * (attempt + 1)))
+          continue
+        }
+
+        if (data.inconclusive) {
+          await new Promise(r => setTimeout(r, 350 * (attempt + 1)))
+          continue
+        }
+
+        applyLookupResult(i, data)
+        return true
+      } catch {
+        await new Promise(r => setTimeout(r, 250 * (attempt + 1)))
+      }
     }
+
+    // Could not verify — leave pending so resume can retry (not marked clean)
+    updateMembers(prev => prev.map((m, idx) => (idx === i ? { ...m, status: 'pending' } : m)))
+    return false
   }
 
   async function startScan() {
@@ -204,7 +227,7 @@ export default function GroupsPage() {
       return
     }
 
-    const workerCount = await getScanWorkerCount()
+    const { concurrency: workerCount, workerDelayMs } = await getScanSettings()
     let queuePos = 0
     let completed = membersRef.current.filter(m => m.status !== 'pending').length
     setScanProgress(p => ({ ...p, current: completed }))
@@ -217,17 +240,24 @@ export default function GroupsPage() {
       return null
     }
 
-    async function worker() {
+    async function worker(workerSlot: number) {
       while (!stopRef.current) {
         const i = takeNextIndex()
         if (i === null) break
-        await scanMemberAtIndex(i)
-        completed++
-        setScanProgress(p => ({ ...p, current: completed }))
+        const done = await scanMemberAtIndex(i, workerSlot)
+        if (done) {
+          completed++
+          setScanProgress(p => ({ ...p, current: completed }))
+        }
+        if (!stopRef.current && workerDelayMs > 0) {
+          await new Promise(r => setTimeout(r, workerDelayMs))
+        }
       }
     }
 
-    await Promise.all(Array.from({ length: workerCount }, () => worker()))
+    await Promise.all(
+      Array.from({ length: workerCount }, (_, slot) => worker(slot))
+    )
     setIsScanning(false)
   }
 
