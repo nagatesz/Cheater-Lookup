@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { lookupXTrackerByRobloxId } from '@/lib/xtracker'
+import { resolveRobloxId, lookupXTrackerByRobloxId } from '@/lib/xtracker'
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url)
@@ -9,17 +9,12 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const xtrackerKey = process.env.XTRACKER_API_KEY || ''
-  const xtrackerBase = process.env.XTRACKER_API_BASE || ''
-
-  // Test the xtracker lookup directly for roblox ID 35349299 (Tateyvl)
-  const lookupRes = await lookupXTrackerByRobloxId(35349299)
+  const resolvedId = await resolveRobloxId("Tateyvl")
+  const lookupRes = resolvedId ? await lookupXTrackerByRobloxId(resolvedId) : null
 
   return NextResponse.json({
-    xtrackerKeyExists: !!xtrackerKey,
-    xtrackerKeyLength: xtrackerKey.length,
-    xtrackerKeysCount: xtrackerKey.split(',').length,
-    xtrackerBase,
+    username: "Tateyvl",
+    resolvedId,
     lookupRes,
   })
 }
