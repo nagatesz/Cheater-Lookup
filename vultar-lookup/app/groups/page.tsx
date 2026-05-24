@@ -24,6 +24,7 @@ type Member = {
   groupId: number
   groupPriority: number
   status: 'pending' | 'checking' | 'clean' | 'flagged'
+  avatarUrl?: string
   result?: any
 }
 
@@ -106,6 +107,34 @@ export default function GroupsPage() {
       }
 
       const dedupedMembers = Array.from(userMap.values())
+
+      // Fetch avatar headshots in chunks of 100 to avoid CORS and get direct image URLs
+      const chunks: number[][] = []
+      for (let i = 0; i < dedupedMembers.length; i += 100) {
+        chunks.push(dedupedMembers.slice(i, i + 100).map(m => m.id))
+      }
+
+      for (const chunk of chunks) {
+        try {
+          const avatarRes = await fetch(`/api/roblox/avatars?userIds=${chunk.join(',')}`)
+          if (avatarRes.ok) {
+            const avatarData = await avatarRes.json()
+            if (avatarData && avatarData.data) {
+              const avatarMap = new Map<number, string>(
+                avatarData.data.map((item: any) => [item.targetId, item.imageUrl])
+              )
+              for (const m of dedupedMembers) {
+                if (avatarMap.has(m.id)) {
+                  m.avatarUrl = avatarMap.get(m.id)
+                }
+              }
+            }
+          }
+        } catch (err) {
+          console.error("Failed to fetch avatar chunk", err)
+        }
+      }
+
       membersRef.current = dedupedMembers
       setMembers(dedupedMembers)
       setScanProgress({ current: 0, total: dedupedMembers.length })
@@ -218,10 +247,10 @@ export default function GroupsPage() {
 
           {/* Main content area */}
           {!loadingRoster && members.length > 0 && (
-            <div className="flex gap-0 relative">
+            <div className="flex flex-col md:flex-row gap-6 relative items-start">
 
               {/* Main roster panel */}
-              <div className={clsx("panel fade-up border-[#1e1e30] transition-all", sidebarOpen ? "w-[calc(100%-360px)]" : "w-full")}>
+              <div className="panel flex-1 fade-up border-[#1e1e30] w-full">
 
                 {/* Dashboard Bar */}
                 <div className="p-4 border-b border-[#1e1e30] bg-[#0f0f1a] flex flex-wrap items-center justify-between gap-4">
@@ -236,10 +265,10 @@ export default function GroupsPage() {
                     </div>
                     <div
                       onClick={() => flaggedCount > 0 && setSidebarOpen(!sidebarOpen)}
-                      className={clsx("cursor-pointer transition-colors", flaggedCount > 0 && "hover:opacity-80")}
+                      className={clsx("cursor-pointer transition-colors px-2 py-1 rounded hover:bg-[#1a1a24]", flaggedCount > 0 && "cursor-pointer")}
                     >
                       <p className="font-mono text-xs text-steel">FLAGGED</p>
-                      <p className={clsx("font-barlow font-700 text-lg", flaggedCount > 0 ? "text-red-500 underline decoration-dotted" : "text-red-500")}>
+                      <p className={clsx("font-barlow font-700 text-lg transition-colors", flaggedCount > 0 ? "text-red-500 hover:text-red-400" : "text-red-500")}>
                         {flaggedCount}
                       </p>
                     </div>
@@ -297,14 +326,17 @@ export default function GroupsPage() {
                             member.status === 'checking' && 'border-yellow-500 animate-pulse',
                             member.status === 'pending' && 'border-[#1e1e30]',
                           )}>
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img
-                              src={`https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=${member.id}&size=150x150&format=Png&isCircular=false`}
-                              alt=""
-                              className="w-full h-full object-cover"
-                              loading="lazy"
-                              onError={(e) => { e.currentTarget.style.display = 'none' }}
-                            />
+                            {member.avatarUrl ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img
+                                src={member.avatarUrl}
+                                alt=""
+                                className="w-full h-full object-cover"
+                                loading="lazy"
+                              />
+                            ) : (
+                              <Shield size={16} className="text-steel" />
+                            )}
                           </div>
 
                           <div>
@@ -345,7 +377,7 @@ export default function GroupsPage() {
 
               {/* Flagged Players Sidebar */}
               {sidebarOpen && (
-                <div className="w-[360px] flex-shrink-0 border border-[#1e1e30] bg-[#0a0a0f] ml-[-1px] flex flex-col max-h-[calc(70vh+72px)]">
+                <div className="w-full md:w-[360px] flex-shrink-0 border border-[#1e1e30] bg-[#0a0a0f] flex flex-col max-h-[calc(70vh+72px)] sticky top-20">
                   {/* Sidebar Header */}
                   <div className="p-4 border-b border-[#1e1e30] bg-[#0f0f1a] flex items-center justify-between flex-shrink-0">
                     <div className="flex items-center gap-2">
@@ -370,13 +402,19 @@ export default function GroupsPage() {
                             sidebarDetail?.id === member.id && "bg-[#111119]"
                           )}
                         >
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img
-                            src={`https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=${member.id}&size=150x150&format=Png&isCircular=false`}
-                            alt=""
-                            className="w-9 h-9 border border-red-800 bg-[#0a0a0f] flex-shrink-0"
-                            loading="lazy"
-                          />
+                          {member.avatarUrl ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={member.avatarUrl}
+                              alt=""
+                              className="w-9 h-9 border border-red-800 bg-[#0a0a0f] flex-shrink-0"
+                              loading="lazy"
+                            />
+                          ) : (
+                            <div className="w-9 h-9 border border-red-800 bg-[#0a0a0f] flex-shrink-0 flex items-center justify-center">
+                              <Shield size={14} className="text-steel" />
+                            </div>
+                          )}
                           <div className="min-w-0 flex-1">
                             <p className="font-barlow font-700 text-sm text-bright truncate">{member.username}</p>
                             <p className="font-mono text-[10px] text-steel truncate">{member.rank}</p>
@@ -428,7 +466,7 @@ export default function GroupsPage() {
                                 <div className="space-y-1.5">
                                   {member.result.xtracker_entries.map((e: any, i: number) => (
                                     <div key={i} className="border border-[#1e1e30] p-2 text-xs">
-                                      <span className="text-crimson font-bold font-rajdhani">{e.reason}</span>
+                                      <span className="text-crimson font-bold font-barlow">{e.reason}</span>
                                       <span className="text-steel font-mono text-[10px] ml-2">
                                         {new Date(e.flagged_at).toLocaleDateString()}
                                       </span>
@@ -452,7 +490,7 @@ export default function GroupsPage() {
                             {member.result.notes && (
                               <div>
                                 <p className="font-mono text-[10px] text-steel mb-1 tracking-wider">NOTES</p>
-                                <p className="font-rajdhani text-xs text-steel border-l-2 border-crimson pl-2">
+                                <p className="font-barlow text-xs text-steel border-l-2 border-crimson pl-2">
                                   {member.result.notes}
                                 </p>
                               </div>
