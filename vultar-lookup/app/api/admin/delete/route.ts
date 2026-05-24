@@ -9,15 +9,22 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const db = createServiceClient()
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || 'not set'
+  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'not set'
+  const service = process.env.SUPABASE_SERVICE_ROLE_KEY || 'not set'
 
-  // Select all records from cheaters
-  const { data: allCheaters, error: e1 } = await db
-    .from('cheaters')
-    .select('*')
+  const db = createServiceClient()
+  
+  // Try querying a different way or check error
+  const { data, error } = await db.from('cheaters').select('*').limit(5)
 
   return NextResponse.json({
-    allCheaters,
-    error: e1?.message || null,
+    env: {
+      url,
+      anon: anon !== 'not set' ? anon.substring(0, 10) + '...' : 'not set',
+      service: service !== 'not set' ? service.substring(0, 10) + '...' : 'not set',
+    },
+    data,
+    error: error?.message || null,
   })
 }
