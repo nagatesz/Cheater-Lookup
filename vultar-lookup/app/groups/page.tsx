@@ -1,5 +1,5 @@
 'use client'
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import Nav from '@/components/Nav'
 import { Shield, Loader2, Play, AlertTriangle, CheckCircle, Database, Zap, ExternalLink, ChevronDown, ChevronUp, X, Pause } from 'lucide-react'
 import clsx from 'clsx'
@@ -48,6 +48,18 @@ export default function GroupsPage() {
 
   const stopRef = useRef(false)
   const membersRef = useRef<Member[]>([])
+  const [scanConcurrency, setScanConcurrency] = useState(3)
+  const [waveDelayMs, setWaveDelayMs] = useState(200)
+
+  useEffect(() => {
+    fetch('/api/scan/config')
+      .then(r => r.json())
+      .then(d => {
+        if (d.concurrency) setScanConcurrency(d.concurrency)
+        if (typeof d.waveDelayMs === 'number') setWaveDelayMs(d.waveDelayMs)
+      })
+      .catch(() => {})
+  }, [])
 
   // Keep membersRef in sync
   const updateMembers = useCallback((updater: (prev: Member[]) => Member[]) => {
@@ -151,46 +163,56 @@ export default function GroupsPage() {
     }
   }
 
+  async function scanMemberAtIndex(i: number) {
+    const member = membersRef.current[i]
+    if (!member || member.status !== 'pending') return
+
+    updateMembers(prev => prev.map((m, idx) => (idx === i ? { ...m, status: 'checking' } : m)))
+
+    try {
+      const res = await fetch(`/api/lookup/${member.id}`)
+      const data = await res.json()
+      const isFlagged = data.found && data.severity
+
+      updateMembers(prev =>
+        prev.map((m, idx) =>
+          idx === i
+            ? { ...m, status: isFlagged ? 'flagged' : 'clean', result: data }
+            : m
+        )
+      )
+    } catch {
+      updateMembers(prev => prev.map((m, idx) => (idx === i ? { ...m, status: 'clean' } : m)))
+    }
+  }
+
   async function startScan() {
     stopRef.current = false
     setIsScanning(true)
 
-    const currentMembers = membersRef.current
-    // Find the first unchecked member to resume from
-    let startIdx = currentMembers.findIndex(m => m.status === 'pending')
-    if (startIdx === -1) {
+    const pendingIndices: number[] = []
+    membersRef.current.forEach((m, i) => {
+      if (m.status === 'pending') pendingIndices.push(i)
+    })
+
+    if (pendingIndices.length === 0) {
       setIsScanning(false)
       return
     }
 
-    for (let i = startIdx; i < currentMembers.length; i++) {
+    let scanned = membersRef.current.filter(m => m.status !== 'pending').length
+
+    for (let w = 0; w < pendingIndices.length; w += scanConcurrency) {
       if (stopRef.current) break
 
-      const member = membersRef.current[i]
-      if (member.status !== 'pending') continue
+      const wave = pendingIndices.slice(w, w + scanConcurrency)
+      await Promise.all(wave.map(i => scanMemberAtIndex(i)))
 
-      // Mark as checking
-      updateMembers(prev => prev.map((m, idx) => idx === i ? { ...m, status: 'checking' } : m))
+      scanned += wave.length
+      setScanProgress(p => ({ ...p, current: scanned }))
 
-      try {
-        const res = await fetch(`/api/lookup/${member.id}`)
-        const data = await res.json()
-        const isFlagged = data.found && data.severity
-
-        updateMembers(prev => prev.map((m, idx) => idx === i ? {
-          ...m,
-          status: isFlagged ? 'flagged' : 'clean',
-          result: data,
-        } : m))
-      } catch {
-        updateMembers(prev => prev.map((m, idx) => idx === i ? { ...m, status: 'clean' } : m))
-      }
-
-      setScanProgress(p => ({ ...p, current: i + 1 }))
-
-      // 200ms delay for rate limiting (rotated dynamically across 4 keys)
-      if (!stopRef.current && i < currentMembers.length - 1) {
-        await new Promise(r => setTimeout(r, 200))
+      if (!stopRef.current && w + scanConcurrency < pendingIndices.length && waveDelayMs > 0) {
+        await new Promise(r => setTimeout(r, waveDelayMs))
       }
     }
 
@@ -220,6 +242,11 @@ export default function GroupsPage() {
             </h1>
             <p className="font-mono text-sm text-steel mt-2">
               Select a target clan to dump roster and initiate global scan.
+              {scanConcurrency > 1 && (
+                <span className="block text-crimson mt-1">
+                  Parallel scan: {scanConcurrency} lookups at once
+                </span>
+              )}
             </p>
           </div>
 

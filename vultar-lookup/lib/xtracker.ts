@@ -3,6 +3,8 @@
 // - /api/registry/user?id=ROBLOX_USER_ID  → cheater registry hits
 // - /api/ownership/user?id=ROBLOX_USER_ID → cheat ownership hits
 // Auth header: { Authorization: "APIKEY" } — no Bearer prefix
+//
+// Set multiple keys comma-separated in XTRACKER_API_KEY for parallel clan scans.
 
 export type XTrackerEntry = {
   roblox_username?: string
@@ -25,93 +27,170 @@ export type XTrackerResult = {
 
 const BASE = 'https://api.xtracker.xyz'
 
-let keyIndex = 0
+type CacheEntry<T> = { data: T; timestamp: number }
+const xtrackerCache = new Map<string, CacheEntry<XTrackerEntry[]>>()
+const robloxIdCache = new Map<string, CacheEntry<number | null>>()
+const avatarCache = new Map<string, CacheEntry<string | null>>()
 
-async function xtrackerFetch(endpoint: string, robloxId: string | number): Promise<XTrackerEntry[]> {
-  const rawApiKey = process.env.XTRACKER_API_KEY
-  if (!rawApiKey || rawApiKey === 'placeholder') return []
+const XTRACKER_TTL = 5 * 60 * 1000
+const ROBLOX_TTL = 60 * 60 * 1000
 
-  const apiKeys = rawApiKey.split(',').map(k => k.trim()).filter(Boolean)
-  if (apiKeys.length === 0) return []
+export function getXTrackerApiKeys(): string[] {
+  const raw = process.env.XTRACKER_API_KEY
+  if (!raw || raw === 'placeholder') return []
+  return raw.split(',').map(k => k.trim()).filter(Boolean)
+}
 
-  // Rotate round-robin
-  const apiKey = apiKeys[keyIndex % apiKeys.length]
-  keyIndex++
+/** How many clan members we can scan in parallel (one dedicated key per slot). */
+export function getXTrackerKeyCount(): number {
+  return getXTrackerApiKeys().length
+}
+
+/** Stable key pick per Roblox ID — spreads load across keys on serverless. */
+function pickApiKey(robloxId: string | number, attempt = 0): string | null {
+  const keys = getXTrackerApiKeys()
+  if (keys.length === 0) return null
+  const id = String(robloxId)
+  let hash = 0
+  for (let i = 0; i < id.length; i++) {
+    hash = (hash * 31 + id.charCodeAt(i)) >>> 0
+  }
+  return keys[(hash + attempt) % keys.length]
+}
+
+function normalizeXTrackerPayload(data: unknown): XTrackerEntry[] {
+  if (!data || typeof data !== 'object') return []
+  const d = data as Record<string, unknown>
+
+  if (Array.isArray(d.evidence)) {
+    return (d.evidence as Array<Record<string, unknown>>).map(ev => ({
+      roblox_id: d.user_id as string | number | undefined,
+      reason: ev.reason as string | undefined,
+      flagged_at: ev.date as string | undefined,
+      evidence: ev.url as string | undefined,
+      alts: d.alts,
+    }))
+  }
+  if (Array.isArray(data)) return data as XTrackerEntry[]
+  if (Array.isArray(d.entries)) return d.entries as XTrackerEntry[]
+  if (Array.isArray(d.results)) return d.results as XTrackerEntry[]
+  if (Array.isArray(d.data)) return d.data as XTrackerEntry[]
+  if (Object.keys(d).length > 0) return [d as XTrackerEntry]
+  return []
+}
+
+async function xtrackerFetch(
+  endpoint: string,
+  robloxId: string | number,
+  apiKey: string
+): Promise<{ entries: XTrackerEntry[]; rateLimited: boolean }> {
+  const cacheKey = `${endpoint}:${robloxId}`
+  const cached = xtrackerCache.get(cacheKey)
+  if (cached && Date.now() - cached.timestamp < XTRACKER_TTL) {
+    return { entries: cached.data, rateLimited: false }
+  }
 
   try {
     const res = await fetch(`${BASE}${endpoint}?id=${robloxId}`, {
       headers: { Authorization: apiKey },
-      next: { revalidate: 300 },
+      cache: 'no-store',
     })
 
+    if (res.status === 429) {
+      return { entries: [], rateLimited: true }
+    }
+
     if (!res.ok) {
-      if (res.status === 404 || res.status === 204) return []
-      console.warn(`XTracker ${endpoint} returned ${res.status}`)
-      return []
+      if (res.status === 404 || res.status === 204) {
+        xtrackerCache.set(cacheKey, { data: [], timestamp: Date.now() })
+      } else {
+        console.warn(`XTracker ${endpoint} returned ${res.status}`)
+      }
+      return { entries: [], rateLimited: false }
     }
 
     const data = await res.json()
-
-    // Normalize — handle the real API structure: { evidence: [...], user_id: "...", alts: "..." }
-    if (data && Array.isArray(data.evidence)) {
-      return data.evidence.map((ev: any) => ({
-        roblox_id: data.user_id,
-        reason: ev.reason,
-        flagged_at: ev.date,
-        evidence: ev.url,
-        alts: data.alts
-      }))
-    }
-    
-    // Fallbacks just in case
-    if (Array.isArray(data)) return data
-    if (Array.isArray(data.entries)) return data.entries
-    if (Array.isArray(data.results)) return data.results
-    if (Array.isArray(data.data)) return data.data
-    if (data && typeof data === 'object' && Object.keys(data).length > 0) return [data]
-    return []
+    const result = normalizeXTrackerPayload(data)
+    xtrackerCache.set(cacheKey, { data: result, timestamp: Date.now() })
+    return { entries: result, rateLimited: false }
   } catch (err) {
     console.error(`XTracker fetch failed (${endpoint}):`, err)
-    return []
+    return { entries: [], rateLimited: false }
   }
 }
 
-// Resolve a Roblox username → Roblox user ID via Roblox API
+async function xtrackerFetchWithRetry(
+  endpoint: string,
+  robloxId: string | number
+): Promise<XTrackerEntry[]> {
+  const keyCount = getXTrackerKeyCount()
+  if (keyCount === 0) return []
+
+  for (let attempt = 0; attempt < keyCount; attempt++) {
+    const apiKey = pickApiKey(robloxId, attempt)
+    if (!apiKey) return []
+
+    const { entries, rateLimited } = await xtrackerFetch(endpoint, robloxId, apiKey)
+    if (!rateLimited) return entries
+
+    // Brief backoff before trying the next key in the pool
+    await new Promise(r => setTimeout(r, 150 * (attempt + 1)))
+  }
+
+  console.warn(`XTracker ${endpoint} rate-limited for all keys (id=${robloxId})`)
+  return []
+}
+
 export async function resolveRobloxId(username: string): Promise<number | null> {
+  const cacheKey = username.toLowerCase()
+  const cached = robloxIdCache.get(cacheKey)
+  if (cached && Date.now() - cached.timestamp < ROBLOX_TTL) {
+    return cached.data
+  }
+
   try {
     const res = await fetch('https://users.roblox.com/v1/usernames/users', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ usernames: [username], excludeBannedUsers: false }),
-      next: { revalidate: 3600 },
+      cache: 'no-store',
     })
     if (!res.ok) return null
     const data = await res.json()
-    return data?.data?.[0]?.id ?? null
+    const id = data?.data?.[0]?.id ?? null
+    if (id) robloxIdCache.set(cacheKey, { data: id, timestamp: Date.now() })
+    return id
   } catch {
     return null
   }
 }
 
-// Fetch Roblox Avatar
 export async function resolveRobloxAvatar(robloxId: number | string): Promise<string | null> {
+  const cacheKey = String(robloxId)
+  const cached = avatarCache.get(cacheKey)
+  if (cached && Date.now() - cached.timestamp < ROBLOX_TTL) {
+    return cached.data
+  }
+
   try {
-    const res = await fetch(`https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=${robloxId}&size=150x150&format=Png&isCircular=false`, {
-      next: { revalidate: 3600 }
-    })
+    const res = await fetch(
+      `https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=${robloxId}&size=150x150&format=Png&isCircular=false`,
+      { cache: 'no-store' }
+    )
     if (!res.ok) return null
     const data = await res.json()
-    return data?.data?.[0]?.imageUrl ?? null
+    const imageUrl = data?.data?.[0]?.imageUrl ?? null
+    if (imageUrl) avatarCache.set(cacheKey, { data: imageUrl, timestamp: Date.now() })
+    return imageUrl
   } catch {
     return null
   }
 }
 
-// Main XTracker lookup — takes a Roblox User ID
 export async function lookupXTrackerByRobloxId(robloxId: string | number): Promise<XTrackerResult> {
   const [registry, ownership] = await Promise.all([
-    xtrackerFetch('/api/registry/user', robloxId),
-    xtrackerFetch('/api/ownership/user', robloxId),
+    xtrackerFetchWithRetry('/api/registry/user', robloxId),
+    xtrackerFetchWithRetry('/api/ownership/user', robloxId),
   ])
 
   const allEntries = [...registry, ...ownership]
@@ -124,7 +203,6 @@ export async function lookupXTrackerByRobloxId(robloxId: string | number): Promi
   }
 }
 
-// Resolve Discord username via bot token (optional)
 export async function resolveDiscordUser(discordId: string): Promise<{
   username: string | null
   avatar_url: string | null
