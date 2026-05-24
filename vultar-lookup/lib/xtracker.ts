@@ -38,7 +38,8 @@ const ROBLOX_TTL = 60 * 60 * 1000
 export function getXTrackerApiKeys(): string[] {
   const raw = process.env.XTRACKER_API_KEY
   if (!raw || raw === 'placeholder') return []
-  return raw.split(',').map(k => k.trim()).filter(Boolean)
+  // Comma or newline separated (Vercel paste-friendly)
+  return raw.split(/[,\n]+/).map(k => k.trim()).filter(Boolean)
 }
 
 /** How many clan members we can scan in parallel (one dedicated key per slot). */

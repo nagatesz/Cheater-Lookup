@@ -48,8 +48,9 @@ export default function GroupsPage() {
 
   const stopRef = useRef(false)
   const membersRef = useRef<Member[]>([])
-  const [scanConcurrency, setScanConcurrency] = useState(3)
+  const [scanConcurrency, setScanConcurrency] = useState(1)
   const [waveDelayMs, setWaveDelayMs] = useState(200)
+  const [keysConfigured, setKeysConfigured] = useState<number | null>(null)
 
   useEffect(() => {
     fetch('/api/scan/config')
@@ -57,6 +58,7 @@ export default function GroupsPage() {
       .then(d => {
         if (d.concurrency) setScanConcurrency(d.concurrency)
         if (typeof d.waveDelayMs === 'number') setWaveDelayMs(d.waveDelayMs)
+        if (typeof d.keysConfigured === 'number') setKeysConfigured(d.keysConfigured)
       })
       .catch(() => {})
   }, [])
@@ -242,9 +244,10 @@ export default function GroupsPage() {
             </h1>
             <p className="font-mono text-sm text-steel mt-2">
               Select a target clan to dump roster and initiate global scan.
-              {scanConcurrency > 1 && (
+              {keysConfigured !== null && (
                 <span className="block text-crimson mt-1">
-                  Parallel scan: {scanConcurrency} lookups at once
+                  XTracker keys: {keysConfigured} — scanning {scanConcurrency} at once
+                  {keysConfigured < 6 && ' (add more keys in Vercel → XTRACKER_API_KEY)'}
                 </span>
               )}
             </p>
