@@ -62,7 +62,7 @@ export async function GET(
   if (dbResult) {
     if (!discordId) discordId = dbResult.discord_id
     if (!robloxUsername && dbResult.roblox_username) {
-      robloxUsername = dbResult.roblox_username
+      robloxUsername = dbResult.roblox_username as string
       if (!robloxId) robloxId = await resolveRobloxId(robloxUsername)
     }
   }
