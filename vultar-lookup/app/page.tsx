@@ -34,10 +34,9 @@ export default function HomePage() {
               <input
                 name="id"
                 type="text"
-                placeholder="Enter Discord ID..."
+                placeholder="Discord ID or Roblox Name"
                 className="search-input flex-1 px-4 py-3 text-sm rounded-none"
-                pattern="[0-9]{17,20}"
-                title="Enter a valid Discord ID (17-20 digits)"
+                maxLength={30}
               />
               <button
                 type="submit"
@@ -48,7 +47,7 @@ export default function HomePage() {
               </button>
             </form>
             <p className="text-xs text-[#334155] font-mono mt-2 text-left">
-              Discord IDs are 17–20 digit numbers. Right-click user → Copy ID in Discord.
+              Accepts Discord IDs, Roblox IDs, or Roblox Usernames.
             </p>
           </div>
 

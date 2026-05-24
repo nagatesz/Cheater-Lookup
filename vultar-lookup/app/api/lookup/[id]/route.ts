@@ -10,26 +10,59 @@ export async function GET(
   _req: Request,
   { params }: { params: { id: string } }
 ) {
-  const { id } = params
+  let discordId: string | null = null
+  let robloxId: number | null = null
+  let robloxUsername: string | null = null
 
-  if (!/^\d{17,20}$/.test(id)) {
-    return NextResponse.json({ error: 'Invalid Discord ID' }, { status: 400 })
+  if (/^\d{17,20}$/.test(id)) {
+    discordId = id
+  } else if (/^\d{1,15}$/.test(id)) {
+    robloxId = parseInt(id)
+  } else if (/^[a-zA-Z0-9_]{3,22}$/.test(id)) {
+    robloxUsername = id
+  } else {
+    return NextResponse.json({ error: 'Invalid input. Provide a Discord ID, Roblox ID, or Roblox Username.' }, { status: 400 })
+  }
+
+  // If we have a username but no ID, resolve the ID
+  if (robloxUsername && !robloxId) {
+    robloxId = await resolveRobloxId(robloxUsername)
+  }
+
+  // If we have an ID but no username (so we can check our DB which only stores username)
+  if (robloxId && !robloxUsername) {
+    try {
+      const res = await fetch(`https://users.roblox.com/v1/users/${robloxId}`)
+      if (res.ok) {
+        const data = await res.json()
+        robloxUsername = data.name
+      }
+    } catch (e) {}
   }
 
   const db = createServiceClient()
 
-  // 1. Check our local DB first
-  const { data: dbResult } = await db
-    .from('cheaters')
-    .select('*')
-    .eq('discord_id', id)
-    .maybeSingle()
+  // 1. Check our local DB
+  let dbQuery = db.from('cheaters').select('*')
+  
+  if (discordId) {
+    dbQuery = dbQuery.eq('discord_id', discordId)
+  } else if (robloxUsername) {
+    dbQuery = dbQuery.ilike('roblox_username', robloxUsername)
+  } else {
+    // Can't query DB effectively without discord_id or roblox_username
+    dbQuery = dbQuery.eq('discord_id', 'impossible_match')
+  }
 
-  // 2. Resolve Roblox ID for XTracker (needs Roblox user ID, not Discord)
-  //    Use stored roblox_username from DB if available, otherwise skip XTracker
-  let robloxId: number | null = null
-  if (dbResult?.roblox_username) {
-    robloxId = await resolveRobloxId(dbResult.roblox_username)
+  const { data: dbResult } = await dbQuery.maybeSingle()
+
+  // If DB found a record, update our identifiers if they were missing
+  if (dbResult) {
+    if (!discordId) discordId = dbResult.discord_id
+    if (!robloxUsername && dbResult.roblox_username) {
+      robloxUsername = dbResult.roblox_username
+      if (!robloxId) robloxId = await resolveRobloxId(robloxUsername)
+    }
   }
 
   // 3. Query XTracker (only if we have a Roblox ID) + Discord resolver in parallel
@@ -37,7 +70,7 @@ export async function GET(
     ? lookupXTrackerByRobloxId(robloxId)
     : Promise.resolve({ found: false, entries: [], ownershipEntries: [], total: 0 })
 
-  const discordPromise = resolveDiscordUser(id)
+  const discordPromise = discordId ? resolveDiscordUser(discordId) : Promise.resolve({ username: null, avatar_url: null })
 
   const [xtrackerResult, discordInfo] = await Promise.all([xtrackerPromise, discordPromise])
 
@@ -45,7 +78,7 @@ export async function GET(
   const foundInXtracker = xtrackerResult.found
 
   if (!foundInDb && !foundInXtracker) {
-    return NextResponse.json({ found: false, discord_id: id })
+    return NextResponse.json({ found: false, search_query: id, discord_id: discordId })
   }
 
   // Merge sources
@@ -91,10 +124,10 @@ export async function GET(
 
   const response = {
     found: true,
-    discord_id: id,
+    discord_id: discordId || dbResult?.discord_id || null,
     username: discordInfo.username || dbResult?.username || null,
     avatar_url: discordInfo.avatar_url || dbResult?.avatar_url || null,
-    roblox_username: dbResult?.roblox_username || xtrackerResult.entries[0]?.roblox_username || null,
+    roblox_username: robloxUsername || dbResult?.roblox_username || xtrackerResult.entries[0]?.roblox_username || null,
     roblox_id: robloxId,
     severity,
     confidence: Math.min(100, confidence),

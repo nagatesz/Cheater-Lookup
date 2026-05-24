@@ -43,8 +43,8 @@ export default function LookupPage() {
   async function handleSearch(e: React.FormEvent) {
     e.preventDefault()
     const id = inputId.trim()
-    if (!id || !/^\d{17,20}$/.test(id)) {
-      setError('Invalid Discord ID — must be 17–20 digits.')
+    if (!id || id.length < 3) {
+      setError('Please enter a valid Discord ID, Roblox ID, or Roblox Username.')
       return
     }
     setLoading(true)
@@ -77,23 +77,22 @@ export default function LookupPage() {
           <div className="mb-8 fade-up">
             <p className="font-mono text-xs text-steel tracking-widest mb-1">// ANTI-CHEAT DATABASE</p>
             <h1 className="font-barlow font-700 text-4xl tracking-wide text-bright">
-              DISCORD ID <span className="text-crimson">LOOKUP</span>
+              PLAYER <span className="text-crimson">LOOKUP</span>
             </h1>
           </div>
 
           {/* Search form */}
           <form onSubmit={handleSearch} className="panel p-5 corner-tl corner-br relative mb-6 fade-up-2">
             <label className="block font-mono text-xs text-steel tracking-widest mb-2">
-              TARGET DISCORD ID
+              DISCORD ID OR ROBLOX USERNAME
             </label>
             <div className="flex gap-2">
               <input
                 value={inputId}
                 onChange={e => setInputId(e.target.value)}
-                placeholder="e.g. 123456789012345678"
+                placeholder="e.g. 123456789012345678 or ROBLOX_NAME"
                 className="search-input flex-1 px-4 py-2.5 text-sm"
-                maxLength={20}
-                inputMode="numeric"
+                maxLength={30}
               />
               <button
                 type="submit"
