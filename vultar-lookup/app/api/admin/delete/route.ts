@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { createServiceClient } from '@/lib/supabase'
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url)
@@ -8,11 +9,27 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || ''
+  const db = createServiceClient()
   
+  // Try querying with specific filters
+  const { data: byDiscord, error: e1 } = await db
+    .from('cheaters')
+    .select('*')
+    .eq('discord_id', '1086798921755525273')
+
+  const { data: byUsername, error: e2 } = await db
+    .from('cheaters')
+    .select('*')
+    .ilike('roblox_username', 'reiayanamifan1738')
+
+  const { data: allNoFilter, error: e3 } = await db
+    .from('cheaters')
+    .select('*')
+
   return NextResponse.json({
-    length: serviceKey.length,
-    startsWithEyJ: serviceKey.startsWith('eyJ'),
-    prefix: serviceKey.substring(0, 15),
+    byDiscord,
+    byUsername,
+    allNoFilter,
+    errors: { e1: e1?.message, e2: e2?.message, e3: e3?.message },
   })
 }
