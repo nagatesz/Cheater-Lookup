@@ -48,19 +48,30 @@ export default function GroupsPage() {
 
   const stopRef = useRef(false)
   const membersRef = useRef<Member[]>([])
-  const [scanConcurrency, setScanConcurrency] = useState(1)
-  const [waveDelayMs, setWaveDelayMs] = useState(200)
+  const [scanConcurrency, setScanConcurrency] = useState(10)
+  const [waveDelayMs, setWaveDelayMs] = useState(0)
   const [keysConfigured, setKeysConfigured] = useState<number | null>(null)
+  const [useBatchScan, setUseBatchScan] = useState(true)
+
+  async function refreshScanConfig() {
+    try {
+      const res = await fetch('/api/scan/config', { cache: 'no-store' })
+      if (!res.ok) {
+        setUseBatchScan(false)
+        return
+      }
+      const d = await res.json()
+      if (d.concurrency) setScanConcurrency(d.concurrency)
+      if (typeof d.waveDelayMs === 'number') setWaveDelayMs(d.waveDelayMs)
+      if (typeof d.keysConfigured === 'number') setKeysConfigured(d.keysConfigured)
+      setUseBatchScan(true)
+    } catch {
+      setUseBatchScan(false)
+    }
+  }
 
   useEffect(() => {
-    fetch('/api/scan/config')
-      .then(r => r.json())
-      .then(d => {
-        if (d.concurrency) setScanConcurrency(d.concurrency)
-        if (typeof d.waveDelayMs === 'number') setWaveDelayMs(d.waveDelayMs)
-        if (typeof d.keysConfigured === 'number') setKeysConfigured(d.keysConfigured)
-      })
-      .catch(() => {})
+    refreshScanConfig()
   }, [])
 
   // Keep membersRef in sync
@@ -165,6 +176,17 @@ export default function GroupsPage() {
     }
   }
 
+  function applyLookupResult(i: number, data: { found?: boolean; severity?: string }) {
+    const isFlagged = !!(data.found && data.severity)
+    updateMembers(prev =>
+      prev.map((m, idx) =>
+        idx === i
+          ? { ...m, status: isFlagged ? 'flagged' : 'clean', result: data }
+          : m
+      )
+    )
+  }
+
   async function scanMemberAtIndex(i: number) {
     const member = membersRef.current[i]
     if (!member || member.status !== 'pending') return
@@ -172,25 +194,61 @@ export default function GroupsPage() {
     updateMembers(prev => prev.map((m, idx) => (idx === i ? { ...m, status: 'checking' } : m)))
 
     try {
-      const res = await fetch(`/api/lookup/${member.id}`)
+      const res = await fetch(`/api/lookup/${member.id}`, { cache: 'no-store' })
       const data = await res.json()
-      const isFlagged = data.found && data.severity
-
-      updateMembers(prev =>
-        prev.map((m, idx) =>
-          idx === i
-            ? { ...m, status: isFlagged ? 'flagged' : 'clean', result: data }
-            : m
-        )
-      )
+      applyLookupResult(i, data)
     } catch {
       updateMembers(prev => prev.map((m, idx) => (idx === i ? { ...m, status: 'clean' } : m)))
+    }
+  }
+
+  async function scanWaveBatch(waveIndices: number[]) {
+    const ids = waveIndices.map(i => membersRef.current[i].id)
+
+    updateMembers(prev =>
+      prev.map((m, idx) =>
+        waveIndices.includes(idx) ? { ...m, status: 'checking' } : m
+      )
+    )
+
+    try {
+      const res = await fetch('/api/scan/batch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids }),
+        cache: 'no-store',
+      })
+
+      if (!res.ok) throw new Error('batch failed')
+
+      const data = await res.json()
+      if (typeof data.keysConfigured === 'number') {
+        setKeysConfigured(data.keysConfigured)
+        setScanConcurrency(data.keysConfigured)
+      }
+
+      const byId = new Map<number, { found?: boolean; severity?: string }>(
+        (data.results || []).map((row: { roblox_id: number; result: { found?: boolean; severity?: string } }) => [
+          row.roblox_id,
+          row.result,
+        ])
+      )
+
+      for (const i of waveIndices) {
+        const id = membersRef.current[i]?.id
+        const result = id != null ? byId.get(id) : null
+        if (result) applyLookupResult(i, result)
+        else updateMembers(prev => prev.map((m, idx) => (idx === i ? { ...m, status: 'clean' } : m)))
+      }
+    } catch {
+      await Promise.all(waveIndices.map(i => scanMemberAtIndex(i)))
     }
   }
 
   async function startScan() {
     stopRef.current = false
     setIsScanning(true)
+    await refreshScanConfig()
 
     const pendingIndices: number[] = []
     membersRef.current.forEach((m, i) => {
@@ -203,12 +261,18 @@ export default function GroupsPage() {
     }
 
     let scanned = membersRef.current.filter(m => m.status !== 'pending').length
+    const batchMode = useBatchScan
 
     for (let w = 0; w < pendingIndices.length; w += scanConcurrency) {
       if (stopRef.current) break
 
       const wave = pendingIndices.slice(w, w + scanConcurrency)
-      await Promise.all(wave.map(i => scanMemberAtIndex(i)))
+
+      if (batchMode) {
+        await scanWaveBatch(wave)
+      } else {
+        await Promise.all(wave.map(i => scanMemberAtIndex(i)))
+      }
 
       scanned += wave.length
       setScanProgress(p => ({ ...p, current: scanned }))
@@ -246,8 +310,13 @@ export default function GroupsPage() {
               Select a target clan to dump roster and initiate global scan.
               {keysConfigured !== null && (
                 <span className="block text-crimson mt-1">
-                  XTracker keys: {keysConfigured} — scanning {scanConcurrency} at once
-                  {keysConfigured < 6 && ' (add more keys in Vercel → XTRACKER_API_KEY)'}
+                  XTracker keys: {keysConfigured} — {useBatchScan ? 'server batch' : 'browser'} scan, {scanConcurrency} per wave
+                  {keysConfigured < 10 && ' (paste all 10 keys in Vercel → XTRACKER_API_KEY)'}
+                </span>
+              )}
+              {keysConfigured === null && !useBatchScan && (
+                <span className="block text-yellow-500 mt-1 text-xs">
+                  Deploy latest code for full-speed batch scanning (/api/scan/batch)
                 </span>
               )}
             </p>

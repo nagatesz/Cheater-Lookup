@@ -39,7 +39,7 @@ export function getXTrackerApiKeys(): string[] {
   const raw = process.env.XTRACKER_API_KEY
   if (!raw || raw === 'placeholder') return []
   // Comma or newline separated (Vercel paste-friendly)
-  return raw.split(/[,\n]+/).map(k => k.trim()).filter(Boolean)
+  return raw.split(/[,\n;]+/).map(k => k.trim()).filter(Boolean)
 }
 
 /** How many clan members we can scan in parallel (one dedicated key per slot). */
