@@ -15,6 +15,7 @@ type LookupResult = {
   source?: string[]
   notes?: string
   roblox_username?: string
+  roblox_id?: number
   evidence_links?: string[]
   created_at?: string
   xtracker_entries?: Array<{
