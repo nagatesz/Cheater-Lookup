@@ -10,6 +10,8 @@ export async function GET(
   _req: Request,
   { params }: { params: { id: string } }
 ) {
+  const { id } = params
+  
   let discordId: string | null = null
   let robloxId: number | null = null
   let robloxUsername: string | null = null
