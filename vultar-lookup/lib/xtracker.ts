@@ -1,65 +1,92 @@
 // XTracker API integration
-// XTracker is a Roblox cheater flagging Discord that logs all caught cheaters
-// Update XTRACKER_API_BASE in .env with the real endpoint once confirmed
+// Docs: https://api.xtracker.xyz
+// - /api/registry/user?id=ROBLOX_USER_ID  → cheater registry hits
+// - /api/ownership/user?id=ROBLOX_USER_ID → cheat ownership hits
+// Auth header: { Authorization: "APIKEY" } — no Bearer prefix
 
 export type XTrackerEntry = {
-  discord_id: string
-  roblox_username: string
-  reason: string
-  flagged_at: string
+  roblox_username?: string
+  roblox_id?: string | number
+  reason?: string
+  cheat?: string
+  flagged_at?: string
   evidence?: string
   flagged_by?: string
   severity?: string
+  [key: string]: unknown
 }
 
 export type XTrackerResult = {
   found: boolean
   entries: XTrackerEntry[]
+  ownershipEntries: XTrackerEntry[]
   total: number
 }
 
-export async function lookupXTracker(discordId: string): Promise<XTrackerResult> {
-  const apiBase = process.env.XTRACKER_API_BASE
-  const apiKey = process.env.XTRACKER_API_KEY
+const BASE = 'https://api.xtracker.xyz'
 
-  if (!apiBase || !apiKey) {
-    console.warn('XTracker API not configured')
-    return { found: false, entries: [], total: 0 }
-  }
+async function xtrackerFetch(endpoint: string, robloxId: string | number): Promise<XTrackerEntry[]> {
+  const apiKey = process.env.XTRACKER_API_KEY
+  if (!apiKey || apiKey === 'placeholder') return []
 
   try {
-    const res = await fetch(`${apiBase}/lookup/${discordId}`, {
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      next: { revalidate: 300 }, // cache 5 min
+    const res = await fetch(`${BASE}${endpoint}?id=${robloxId}`, {
+      headers: { Authorization: apiKey },
+      next: { revalidate: 300 },
     })
 
     if (!res.ok) {
-      if (res.status === 404) return { found: false, entries: [], total: 0 }
-      throw new Error(`XTracker API error: ${res.status}`)
+      if (res.status === 404 || res.status === 204) return []
+      console.warn(`XTracker ${endpoint} returned ${res.status}`)
+      return []
     }
 
     const data = await res.json()
 
-    // Normalize response — update field mapping once you have the real API schema
-    const entries: XTrackerEntry[] = Array.isArray(data.entries)
-      ? data.entries
-      : Array.isArray(data.results)
-      ? data.results
-      : data.found
-      ? [data]
-      : []
-
-    return {
-      found: entries.length > 0,
-      entries,
-      total: entries.length,
-    }
+    // Normalize — handle array or object with entries/results/data key
+    if (Array.isArray(data)) return data
+    if (Array.isArray(data.entries)) return data.entries
+    if (Array.isArray(data.results)) return data.results
+    if (Array.isArray(data.data)) return data.data
+    if (data && typeof data === 'object' && Object.keys(data).length > 0) return [data]
+    return []
   } catch (err) {
-    console.error('XTracker lookup failed:', err)
-    return { found: false, entries: [], total: 0 }
+    console.error(`XTracker fetch failed (${endpoint}):`, err)
+    return []
+  }
+}
+
+// Resolve a Roblox username → Roblox user ID via Roblox API
+export async function resolveRobloxId(username: string): Promise<number | null> {
+  try {
+    const res = await fetch('https://users.roblox.com/v1/usernames/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ usernames: [username], excludeBannedUsers: false }),
+      next: { revalidate: 3600 },
+    })
+    if (!res.ok) return null
+    const data = await res.json()
+    return data?.data?.[0]?.id ?? null
+  } catch {
+    return null
+  }
+}
+
+// Main XTracker lookup — takes a Roblox User ID
+export async function lookupXTrackerByRobloxId(robloxId: string | number): Promise<XTrackerResult> {
+  const [registry, ownership] = await Promise.all([
+    xtrackerFetch('/api/registry/user', robloxId),
+    xtrackerFetch('/api/ownership/user', robloxId),
+  ])
+
+  const allEntries = [...registry, ...ownership]
+
+  return {
+    found: allEntries.length > 0,
+    entries: registry,
+    ownershipEntries: ownership,
+    total: allEntries.length,
   }
 }
 
