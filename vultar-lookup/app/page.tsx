@@ -68,7 +68,7 @@ export default function HomePage() {
         </div>
 
         {/* Bottom nav cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-2xl w-full mt-16 fade-up-4 px-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 max-w-4xl w-full mt-16 fade-up-4 px-4">
           <Link href="/lookup" className="panel p-6 corner-tl corner-br relative hover:border-crimson transition-colors group">
             <Search size={20} className="text-crimson mb-3" />
             <h3 className="font-barlow font-700 text-lg tracking-wide text-bright group-hover:text-crimson transition-colors">
@@ -78,8 +78,17 @@ export default function HomePage() {
               Search a Discord ID against our database and XTracker logs.
             </p>
           </Link>
-          <Link href="/submit" className="panel p-6 corner-tl corner-br relative hover:border-crimson transition-colors group">
+          <Link href="/groups" className="panel p-6 corner-tl corner-br relative hover:border-crimson transition-colors group">
             <Shield size={20} className="text-crimson mb-3" />
+            <h3 className="font-barlow font-700 text-lg tracking-wide text-bright group-hover:text-crimson transition-colors">
+              SCAN CLANS
+            </h3>
+            <p className="text-steel text-sm mt-1 font-rajdhani">
+              Fetch entire clan rosters and automatically check everyone.
+            </p>
+          </Link>
+          <Link href="/submit" className="panel p-6 corner-tl corner-br relative hover:border-crimson transition-colors group">
+            <Plus size={20} className="text-crimson mb-3" />
             <h3 className="font-barlow font-700 text-lg tracking-wide text-bright group-hover:text-crimson transition-colors">
               SUBMIT A CHEATER
             </h3>

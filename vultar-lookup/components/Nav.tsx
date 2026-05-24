@@ -7,6 +7,7 @@ import clsx from 'clsx'
 const links = [
   { href: '/', label: 'HOME', icon: Home },
   { href: '/lookup', label: 'LOOKUP', icon: Search },
+  { href: '/groups', label: 'CLAN SCANNER', icon: Shield },
   { href: '/submit', label: 'SUBMIT', icon: Plus },
 ]
 

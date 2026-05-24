@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    body {
+      width: 300px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background: #08080d;
+      color: #e2e8f0;
+      margin: 0;
+      padding: 16px;
+    }
+    h2 {
+      margin: 0 0 4px 0;
+      font-size: 16px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: #fff;
+    }
+    p { margin: 0 0 16px 0; font-size: 12px; color: #94a3b8; }
+    input {
+      width: 100%;
+      box-sizing: border-box;
+      background: #0f0f1a;
+      border: 1px solid #1e1e30;
+      color: #fff;
+      padding: 8px 12px;
+      margin-bottom: 12px;
+      font-family: monospace;
+    }
+    button {
+      width: 100%;
+      background: #ff3333;
+      color: white;
+      border: none;
+      padding: 10px;
+      font-weight: bold;
+      letter-spacing: 1px;
+      cursor: pointer;
+    }
+    button:hover { background: #ff4d4d; }
+    button:disabled { background: #333; cursor: not-allowed; opacity: 0.5; }
+    #status {
+      margin-top: 12px;
+      font-size: 12px;
+      font-family: monospace;
+      color: #94a3b8;
+    }
+  </style>
+</head>
+<body>
+  <h2>Vultar Group Dumper</h2>
+  <p>Export all members of a Roblox group to a .txt file.</p>
+  
+  <input type="number" id="groupId" placeholder="Roblox Group ID (e.g. 35685159)" />
+  <button id="dumpBtn">DUMP ROSTER</button>
+  
+  <div id="status"></div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "Vultar Group Dumper",
+  "version": "1.0",
+  "description": "Dumps all members of a Roblox Group into a formatted .txt file.",
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "permissions": [
+    "downloads"
+  ],
+  "host_permissions": [
+    "https://groups.roblox.com/*"
+  ]
+}

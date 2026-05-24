@@ -173,7 +173,20 @@ export default function LookupPage() {
                     </p>
                     {result.roblox_username && (
                       <p className="font-mono text-xs text-steel">
-                        Roblox: <span className="text-crimson">{result.roblox_username}</span>
+                        Roblox:{' '}
+                        {result.roblox_id ? (
+                          <a 
+                            href={`https://www.roblox.com/users/${result.roblox_id}/profile`} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="text-crimson hover:text-crimsonHot hover:underline transition-colors flex inline-flex items-center gap-1"
+                          >
+                            {result.roblox_username}
+                            <ExternalLink size={10} />
+                          </a>
+                        ) : (
+                          <span className="text-crimson">{result.roblox_username}</span>
+                        )}
                       </p>
                     )}
                   </div>
