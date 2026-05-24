@@ -43,7 +43,18 @@ async function xtrackerFetch(endpoint: string, robloxId: string | number): Promi
 
     const data = await res.json()
 
-    // Normalize — handle array or object with entries/results/data key
+    // Normalize — handle the real API structure: { evidence: [...], user_id: "...", alts: "..." }
+    if (data && Array.isArray(data.evidence)) {
+      return data.evidence.map((ev: any) => ({
+        roblox_id: data.user_id,
+        reason: ev.reason,
+        flagged_at: ev.date,
+        evidence: ev.url,
+        alts: data.alts
+      }))
+    }
+    
+    // Fallbacks just in case
     if (Array.isArray(data)) return data
     if (Array.isArray(data.entries)) return data.entries
     if (Array.isArray(data.results)) return data.results
