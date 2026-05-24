@@ -1,0 +1,6 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "installCommand": "npm install --prefix vultar-lookup",
+  "buildCommand": "npm run build --prefix vultar-lookup",
+  "outputDirectory": "vultar-lookup/.next"
+}
