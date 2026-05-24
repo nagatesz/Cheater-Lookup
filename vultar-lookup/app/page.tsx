@@ -1,6 +1,6 @@
 import Nav from '@/components/Nav'
 import Link from 'next/link'
-import { Search, Shield, Database, Zap } from 'lucide-react'
+import { Search, Shield, Database, Zap, Plus } from 'lucide-react'
 
 export default function HomePage() {
   return (
