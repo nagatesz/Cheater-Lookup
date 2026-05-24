@@ -84,6 +84,20 @@ export async function resolveRobloxId(username: string): Promise<number | null> 
   }
 }
 
+// Fetch Roblox Avatar
+export async function resolveRobloxAvatar(robloxId: number | string): Promise<string | null> {
+  try {
+    const res = await fetch(`https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=${robloxId}&size=150x150&format=Png&isCircular=false`, {
+      next: { revalidate: 3600 }
+    })
+    if (!res.ok) return null
+    const data = await res.json()
+    return data?.data?.[0]?.imageUrl ?? null
+  } catch {
+    return null
+  }
+}
+
 // Main XTracker lookup — takes a Roblox User ID
 export async function lookupXTrackerByRobloxId(robloxId: string | number): Promise<XTrackerResult> {
   const [registry, ownership] = await Promise.all([

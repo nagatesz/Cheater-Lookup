@@ -84,7 +84,7 @@ export default function LookupPage() {
           {/* Search form */}
           <form onSubmit={handleSearch} className="panel p-5 corner-tl corner-br relative mb-6 fade-up-2">
             <label className="block font-mono text-xs text-steel tracking-widest mb-2">
-              DISCORD ID OR ROBLOX USERNAME
+              DISCORD ID OR ROBLOX USERNAME OR ID
             </label>
             <div className="flex gap-2">
               <input
@@ -183,12 +183,14 @@ export default function LookupPage() {
 
                 {/* Discord ID + date */}
                 <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <p className="font-mono text-xs text-steel mb-1 tracking-wider">DISCORD ID</p>
-                    <p className="font-mono text-sm text-bright bg-[#0a0a0f] border border-[#1e1e30] px-3 py-1.5">
-                      {result.discord_id}
-                    </p>
-                  </div>
+                  {result.discord_id && (
+                    <div>
+                      <p className="font-mono text-xs text-steel mb-1 tracking-wider">DISCORD ID</p>
+                      <p className="font-mono text-sm text-bright bg-[#0a0a0f] border border-[#1e1e30] px-3 py-1.5">
+                        {result.discord_id}
+                      </p>
+                    </div>
+                  )}
                   <div>
                     <p className="font-mono text-xs text-steel mb-1 tracking-wider">DATE ADDED</p>
                     <p className="font-mono text-sm text-bright bg-[#0a0a0f] border border-[#1e1e30] px-3 py-1.5 flex items-center gap-1">

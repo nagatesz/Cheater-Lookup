@@ -4,6 +4,7 @@ import {
   lookupXTrackerByRobloxId,
   resolveRobloxId,
   resolveDiscordUser,
+  resolveRobloxAvatar,
 } from '@/lib/xtracker'
 
 export async function GET(
@@ -73,8 +74,9 @@ export async function GET(
     : Promise.resolve({ found: false, entries: [], ownershipEntries: [], total: 0 })
 
   const discordPromise = discordId ? resolveDiscordUser(discordId) : Promise.resolve({ username: null, avatar_url: null })
+  const robloxAvatarPromise = robloxId ? resolveRobloxAvatar(robloxId) : Promise.resolve(null)
 
-  const [xtrackerResult, discordInfo] = await Promise.all([xtrackerPromise, discordPromise])
+  const [xtrackerResult, discordInfo, robloxAvatarUrl] = await Promise.all([xtrackerPromise, discordPromise, robloxAvatarPromise])
 
   const foundInDb = !!dbResult
   const foundInXtracker = xtrackerResult.found
@@ -87,22 +89,6 @@ export async function GET(
   const sources: string[] = []
   if (foundInDb) sources.push('manual')
   if (foundInXtracker) sources.push('xtracker')
-
-  // Calculate confidence
-  let confidence = 0
-  if (foundInDb) confidence += dbResult.confidence ?? 60
-  if (foundInXtracker) confidence = Math.min(100, confidence + 30)
-  if (!foundInDb && foundInXtracker) confidence = Math.max(65, confidence)
-
-  // Determine severity (take highest from either source)
-  const severityOrder = { low: 1, medium: 2, high: 3, critical: 4 }
-  let severity = dbResult?.severity || 'medium'
-  if (foundInXtracker && xtrackerResult.entries[0]?.severity) {
-    const xtSev = xtrackerResult.entries[0].severity as keyof typeof severityOrder
-    if (severityOrder[xtSev] > severityOrder[severity as keyof typeof severityOrder]) {
-      severity = xtSev
-    }
-  }
 
   // Normalize XTracker entries for display
   const xtrackerEntries = [
@@ -124,11 +110,49 @@ export async function GET(
     })),
   ]
 
+  // Determine severity (take highest from either source)
+  const severityOrder = { low: 1, medium: 2, high: 3, critical: 4 }
+  let severity = dbResult?.severity || 'medium'
+  
+  // Calculate confidence dynamically
+  let confidence = 0
+  if (foundInDb) confidence += dbResult.confidence ?? 60
+  
+  if (foundInXtracker) {
+    let xtrackerScore = 30 // Base score for being in XTracker
+    let hasCriticalKeyword = false
+    
+    // Add points for amount of logs (up to +20)
+    xtrackerScore += Math.min(20, xtrackerEntries.length * 5)
+    
+    const criticalWords = ['aimbot', 'esp', 'cheat', 'lagswitch', 'exploit', 'inject']
+    
+    for (const entry of xtrackerEntries) {
+      const reasonLower = (entry.reason || '').toLowerCase()
+      if (criticalWords.some(w => reasonLower.includes(w))) {
+        hasCriticalKeyword = true
+        xtrackerScore += 15 // Bonus for critical keywords
+      }
+    }
+    
+    confidence = Math.min(100, confidence + xtrackerScore)
+    
+    // Auto-escalate severity if critical words found
+    if (hasCriticalKeyword && severityOrder[severity as keyof typeof severityOrder] < severityOrder.critical) {
+      severity = 'critical'
+    } else if (severityOrder[severity as keyof typeof severityOrder] < severityOrder.high) {
+      severity = 'high'
+    }
+    
+    // Minimum confidence if found in Xtracker
+    if (!foundInDb) confidence = Math.max(65, confidence)
+  }
+
   const response = {
     found: true,
     discord_id: discordId || dbResult?.discord_id || null,
-    username: discordInfo.username || dbResult?.username || null,
-    avatar_url: discordInfo.avatar_url || dbResult?.avatar_url || null,
+    username: discordInfo.username || robloxUsername || dbResult?.username || null,
+    avatar_url: discordInfo.avatar_url || dbResult?.avatar_url || robloxAvatarUrl || null,
     roblox_username: robloxUsername || dbResult?.roblox_username || xtrackerResult.entries[0]?.roblox_username || null,
     roblox_id: robloxId,
     severity,
