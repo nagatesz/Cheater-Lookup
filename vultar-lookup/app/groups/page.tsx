@@ -1,5 +1,5 @@
 'use client'
-import { useState, useRef, useCallback, useEffect } from 'react'
+import { useState, useRef, useCallback } from 'react'
 import Nav from '@/components/Nav'
 import { Shield, Loader2, Play, AlertTriangle, CheckCircle, Database, Zap, ExternalLink, ChevronDown, ChevronUp, X, Pause } from 'lucide-react'
 import clsx from 'clsx'
@@ -48,31 +48,19 @@ export default function GroupsPage() {
 
   const stopRef = useRef(false)
   const membersRef = useRef<Member[]>([])
-  const [scanConcurrency, setScanConcurrency] = useState(10)
-  const [waveDelayMs, setWaveDelayMs] = useState(0)
-  const [keysConfigured, setKeysConfigured] = useState<number | null>(null)
-  const [useBatchScan, setUseBatchScan] = useState(true)
 
-  async function refreshScanConfig() {
+  async function getScanWorkerCount(): Promise<number> {
     try {
       const res = await fetch('/api/scan/config', { cache: 'no-store' })
-      if (!res.ok) {
-        setUseBatchScan(false)
-        return
+      if (res.ok) {
+        const d = await res.json()
+        if (d.concurrency && d.concurrency > 0) return d.concurrency
       }
-      const d = await res.json()
-      if (d.concurrency) setScanConcurrency(d.concurrency)
-      if (typeof d.waveDelayMs === 'number') setWaveDelayMs(d.waveDelayMs)
-      if (typeof d.keysConfigured === 'number') setKeysConfigured(d.keysConfigured)
-      setUseBatchScan(true)
     } catch {
-      setUseBatchScan(false)
+      /* use default */
     }
+    return 10
   }
-
-  useEffect(() => {
-    refreshScanConfig()
-  }, [])
 
   // Keep membersRef in sync
   const updateMembers = useCallback((updater: (prev: Member[]) => Member[]) => {
@@ -202,53 +190,9 @@ export default function GroupsPage() {
     }
   }
 
-  async function scanWaveBatch(waveIndices: number[]) {
-    const ids = waveIndices.map(i => membersRef.current[i].id)
-
-    updateMembers(prev =>
-      prev.map((m, idx) =>
-        waveIndices.includes(idx) ? { ...m, status: 'checking' } : m
-      )
-    )
-
-    try {
-      const res = await fetch('/api/scan/batch', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ids }),
-        cache: 'no-store',
-      })
-
-      if (!res.ok) throw new Error('batch failed')
-
-      const data = await res.json()
-      if (typeof data.keysConfigured === 'number') {
-        setKeysConfigured(data.keysConfigured)
-        setScanConcurrency(data.keysConfigured)
-      }
-
-      const byId = new Map<number, { found?: boolean; severity?: string }>(
-        (data.results || []).map((row: { roblox_id: number; result: { found?: boolean; severity?: string } }) => [
-          row.roblox_id,
-          row.result,
-        ])
-      )
-
-      for (const i of waveIndices) {
-        const id = membersRef.current[i]?.id
-        const result = id != null ? byId.get(id) : null
-        if (result) applyLookupResult(i, result)
-        else updateMembers(prev => prev.map((m, idx) => (idx === i ? { ...m, status: 'clean' } : m)))
-      }
-    } catch {
-      await Promise.all(waveIndices.map(i => scanMemberAtIndex(i)))
-    }
-  }
-
   async function startScan() {
     stopRef.current = false
     setIsScanning(true)
-    await refreshScanConfig()
 
     const pendingIndices: number[] = []
     membersRef.current.forEach((m, i) => {
@@ -260,28 +204,30 @@ export default function GroupsPage() {
       return
     }
 
-    let scanned = membersRef.current.filter(m => m.status !== 'pending').length
-    const batchMode = useBatchScan
+    const workerCount = await getScanWorkerCount()
+    let queuePos = 0
+    let completed = membersRef.current.filter(m => m.status !== 'pending').length
+    setScanProgress(p => ({ ...p, current: completed }))
 
-    for (let w = 0; w < pendingIndices.length; w += scanConcurrency) {
-      if (stopRef.current) break
-
-      const wave = pendingIndices.slice(w, w + scanConcurrency)
-
-      if (batchMode) {
-        await scanWaveBatch(wave)
-      } else {
-        await Promise.all(wave.map(i => scanMemberAtIndex(i)))
+    const takeNextIndex = (): number | null => {
+      while (queuePos < pendingIndices.length) {
+        const i = pendingIndices[queuePos++]
+        if (membersRef.current[i]?.status === 'pending') return i
       }
+      return null
+    }
 
-      scanned += wave.length
-      setScanProgress(p => ({ ...p, current: scanned }))
-
-      if (!stopRef.current && w + scanConcurrency < pendingIndices.length && waveDelayMs > 0) {
-        await new Promise(r => setTimeout(r, waveDelayMs))
+    async function worker() {
+      while (!stopRef.current) {
+        const i = takeNextIndex()
+        if (i === null) break
+        await scanMemberAtIndex(i)
+        completed++
+        setScanProgress(p => ({ ...p, current: completed }))
       }
     }
 
+    await Promise.all(Array.from({ length: workerCount }, () => worker()))
     setIsScanning(false)
   }
 
@@ -308,17 +254,6 @@ export default function GroupsPage() {
             </h1>
             <p className="font-mono text-sm text-steel mt-2">
               Select a target clan to dump roster and initiate global scan.
-              {keysConfigured !== null && (
-                <span className="block text-crimson mt-1">
-                  XTracker keys: {keysConfigured} — {useBatchScan ? 'server batch' : 'browser'} scan, {scanConcurrency} per wave
-                  {keysConfigured < 10 && ' (paste all 10 keys in Vercel → XTRACKER_API_KEY)'}
-                </span>
-              )}
-              {keysConfigured === null && !useBatchScan && (
-                <span className="block text-yellow-500 mt-1 text-xs">
-                  Deploy latest code for full-speed batch scanning (/api/scan/batch)
-                </span>
-              )}
             </p>
           </div>
 
