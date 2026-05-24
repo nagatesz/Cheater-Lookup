@@ -18,6 +18,9 @@ const CLANS = [
   { name: 'VAKTOVIA', groups: [
     { id: 3969344, label: 'Imperial Vaktovia', priority: 1 },
   ]},
+  { name: 'BLACK BERETS', groups: [
+    { id: 5671992, label: 'Snow Core | Black Berets', priority: 1 },
+  ]},
 ]
 
 type Member = {
