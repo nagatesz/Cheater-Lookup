@@ -15,6 +15,9 @@ const CLANS = [
   { name: 'SURGE', groups: [
     { id: 12434378, label: 'Insurgent Ascension Program', priority: 1 },
   ]},
+  { name: 'VAKTOVIA', groups: [
+    { id: 3969344, label: 'Imperial Vaktovia', priority: 1 },
+  ]},
 ]
 
 type Member = {
@@ -182,9 +185,9 @@ export default function GroupsPage() {
 
       setScanProgress(p => ({ ...p, current: i + 1 }))
 
-      // 300ms delay for rate limiting (rotated dynamically across 4 keys)
+      // 200ms delay for rate limiting (rotated dynamically across 4 keys)
       if (!stopRef.current && i < currentMembers.length - 1) {
-        await new Promise(r => setTimeout(r, 300))
+        await new Promise(r => setTimeout(r, 200))
       }
     }
 
