@@ -167,8 +167,19 @@ export default function GroupsPage() {
     }
   }
 
-  function applyLookupResult(i: number, data: { found?: boolean; severity?: string }) {
-    const isFlagged = !!(data.found && data.severity)
+  function applyLookupResult(
+    i: number,
+    data: {
+      found?: boolean
+      severity?: string
+      inconclusive?: boolean
+      xtracker_entries?: unknown[]
+    }
+  ) {
+    if (data.inconclusive) return
+    const hasXtracker =
+      Array.isArray(data.xtracker_entries) && data.xtracker_entries.length > 0
+    const isFlagged = data.found === true || hasXtracker
     updateMembers(prev =>
       prev.map((m, idx) =>
         idx === i
@@ -184,7 +195,7 @@ export default function GroupsPage() {
 
     updateMembers(prev => prev.map((m, idx) => (idx === i ? { ...m, status: 'checking' } : m)))
 
-    for (let attempt = 0; attempt < 4; attempt++) {
+    for (let attempt = 0; attempt < 6; attempt++) {
       try {
         const res = await fetch(`/api/lookup/${member.id}?worker=${workerSlot}`, {
           cache: 'no-store',
@@ -192,19 +203,19 @@ export default function GroupsPage() {
         const data = await res.json()
 
         if (!res.ok) {
-          await new Promise(r => setTimeout(r, 250 * (attempt + 1)))
+          await new Promise(r => setTimeout(r, 1000 * (attempt + 1)))
           continue
         }
 
         if (data.inconclusive) {
-          await new Promise(r => setTimeout(r, 350 * (attempt + 1)))
+          await new Promise(r => setTimeout(r, 1500 * (attempt + 1)))
           continue
         }
 
         applyLookupResult(i, data)
         return true
       } catch {
-        await new Promise(r => setTimeout(r, 250 * (attempt + 1)))
+        await new Promise(r => setTimeout(r, 1000 * (attempt + 1)))
       }
     }
 

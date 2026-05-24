@@ -23,7 +23,7 @@ export type XTrackerResult = {
   entries: XTrackerEntry[]
   ownershipEntries: XTrackerEntry[]
   total: number
-  /** True when every key was rate-limited — do not treat as "clean" */
+  /** True when we could not get a trustworthy answer — do not treat as "clean" */
   inconclusive: boolean
 }
 
@@ -37,26 +37,25 @@ const avatarCache = new Map<string, CacheEntry<string | null>>()
 const XTRACKER_TTL = 5 * 60 * 1000
 const ROBLOX_TTL = 60 * 60 * 1000
 
+const WORKER_RETRY_ATTEMPTS = 6
+const WORKER_RETRY_BASE_MS = 1500
+
 export function getXTrackerApiKeys(): string[] {
   const raw = process.env.XTRACKER_API_KEY
   if (!raw || raw === 'placeholder') return []
-  // Comma or newline separated (Vercel paste-friendly)
   return raw.split(/[,\n;]+/).map(k => k.trim()).filter(Boolean)
 }
 
-/** How many clan members we can scan in parallel (one dedicated key per slot). */
 export function getXTrackerKeyCount(): number {
   return getXTrackerApiKeys().length
 }
 
-/** One dedicated API key per parallel worker slot (0–9). */
 export function pickApiKeyBySlot(slot: number, attempt = 0): string | null {
   const keys = getXTrackerApiKeys()
   if (keys.length === 0) return null
   return keys[(slot + attempt) % keys.length]
 }
 
-/** Stable key pick per Roblox ID — used when no worker slot is provided. */
 function pickApiKey(robloxId: string | number, attempt = 0): string | null {
   const keys = getXTrackerApiKeys()
   if (keys.length === 0) return null
@@ -72,6 +71,14 @@ function normalizeXTrackerPayload(data: unknown): XTrackerEntry[] {
   if (!data || typeof data !== 'object') return []
   const d = data as Record<string, unknown>
 
+  if (d.success === false) return []
+
+  const nested = d.data
+  if (nested !== undefined && nested !== null) {
+    if (Array.isArray(nested)) return nested as XTrackerEntry[]
+    if (typeof nested === 'object') return normalizeXTrackerPayload(nested)
+  }
+
   if (Array.isArray(d.evidence)) {
     return (d.evidence as Array<Record<string, unknown>>).map(ev => ({
       roblox_id: d.user_id as string | number | undefined,
@@ -84,20 +91,29 @@ function normalizeXTrackerPayload(data: unknown): XTrackerEntry[] {
   if (Array.isArray(data)) return data as XTrackerEntry[]
   if (Array.isArray(d.entries)) return d.entries as XTrackerEntry[]
   if (Array.isArray(d.results)) return d.results as XTrackerEntry[]
-  if (Array.isArray(d.data)) return d.data as XTrackerEntry[]
-  if (Object.keys(d).length > 0) return [d as XTrackerEntry]
+  if (Array.isArray(d.records)) return d.records as XTrackerEntry[]
+  if (Array.isArray(d.flags)) return d.flags as XTrackerEntry[]
+
+  if (d.user_id != null && (d.reason || d.cheat || d.flagged_at)) {
+    return [d as XTrackerEntry]
+  }
+
   return []
 }
+
+type FetchOutcome =
+  | { entries: XTrackerEntry[]; trusted: true }
+  | { entries: []; trusted: false }
 
 async function xtrackerFetch(
   endpoint: string,
   robloxId: string | number,
   apiKey: string
-): Promise<{ entries: XTrackerEntry[]; rateLimited: boolean }> {
-  const cacheKey = `${endpoint}:${robloxId}`
+): Promise<FetchOutcome> {
+  const cacheKey = `v2:${endpoint}:${robloxId}`
   const cached = xtrackerCache.get(cacheKey)
   if (cached && Date.now() - cached.timestamp < XTRACKER_TTL) {
-    return { entries: cached.data, rateLimited: false }
+    return { entries: cached.data, trusted: true }
   }
 
   try {
@@ -107,25 +123,25 @@ async function xtrackerFetch(
     })
 
     if (res.status === 429) {
-      return { entries: [], rateLimited: true }
+      return { entries: [], trusted: false }
     }
 
     if (!res.ok) {
       if (res.status === 404 || res.status === 204) {
         xtrackerCache.set(cacheKey, { data: [], timestamp: Date.now() })
-        return { entries: [], rateLimited: false }
+        return { entries: [], trusted: true }
       }
-      console.warn(`XTracker ${endpoint} returned ${res.status}`)
-      return { entries: [], rateLimited: res.status === 429 || res.status >= 500 }
+      console.warn(`XTracker ${endpoint} returned ${res.status} for id=${robloxId}`)
+      return { entries: [], trusted: false }
     }
 
     const data = await res.json()
     const result = normalizeXTrackerPayload(data)
     xtrackerCache.set(cacheKey, { data: result, timestamp: Date.now() })
-    return { entries: result, rateLimited: false }
+    return { entries: result, trusted: true }
   } catch (err) {
     console.error(`XTracker fetch failed (${endpoint}):`, err)
-    return { entries: [], rateLimited: true }
+    return { entries: [], trusted: false }
   }
 }
 
@@ -139,20 +155,27 @@ async function xtrackerFetchWithRetry(
   const keyCount = getXTrackerKeyCount()
   if (keyCount === 0) return { entries: [], inconclusive: true }
 
-  for (let attempt = 0; attempt < keyCount; attempt++) {
+  const maxAttempts =
+    workerSlot !== undefined ? WORKER_RETRY_ATTEMPTS : Math.min(keyCount, WORKER_RETRY_ATTEMPTS)
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
     const apiKey =
       workerSlot !== undefined
-        ? pickApiKeyBySlot(workerSlot, attempt)
+        ? pickApiKeyBySlot(workerSlot, 0)
         : pickApiKey(robloxId, attempt)
     if (!apiKey) return { entries: [], inconclusive: true }
 
-    const { entries, rateLimited } = await xtrackerFetch(endpoint, robloxId, apiKey)
-    if (!rateLimited) return { entries, inconclusive: false }
+    const { entries, trusted } = await xtrackerFetch(endpoint, robloxId, apiKey)
+    if (trusted) return { entries, inconclusive: false }
 
-    await new Promise(r => setTimeout(r, 200 * (attempt + 1)))
+    const delay =
+      workerSlot !== undefined
+        ? WORKER_RETRY_BASE_MS * Math.pow(1.5, attempt)
+        : 400 * (attempt + 1)
+    await new Promise(r => setTimeout(r, delay))
   }
 
-  console.warn(`XTracker ${endpoint} rate-limited for all keys (id=${robloxId})`)
+  console.warn(`XTracker ${endpoint} failed after retries (id=${robloxId}, worker=${workerSlot ?? 'n/a'})`)
   return { entries: [], inconclusive: true }
 }
 
@@ -207,17 +230,19 @@ export async function lookupXTrackerByRobloxId(
   workerSlot?: number
 ): Promise<XTrackerResult> {
   const registry = await xtrackerFetchWithRetry('/api/registry/user', robloxId, workerSlot)
-  await new Promise(r => setTimeout(r, 500))
+  await new Promise(r => setTimeout(r, 1000))
   const ownership = await xtrackerFetchWithRetry('/api/ownership/user', robloxId, workerSlot)
 
   const allEntries = [...registry.entries, ...ownership.entries]
+  const anyInconclusive = registry.inconclusive || ownership.inconclusive
 
   return {
     found: allEntries.length > 0,
     entries: registry.entries,
     ownershipEntries: ownership.entries,
     total: allEntries.length,
-    inconclusive: registry.inconclusive && ownership.inconclusive,
+    // If either endpoint failed with no hits, do not treat as confirmed clean
+    inconclusive: anyInconclusive && allEntries.length === 0,
   }
 }
 

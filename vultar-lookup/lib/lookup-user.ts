@@ -97,7 +97,7 @@ export async function lookupByRobloxId(
   if (!foundInDb && !foundInXtracker) {
     return {
       found: false,
-      inconclusive: xtrackerResult.inconclusive,
+      inconclusive: Boolean(xtrackerResult.inconclusive),
       roblox_id: robloxId,
       discord_id: discordId,
       roblox_username: robloxUsername,
