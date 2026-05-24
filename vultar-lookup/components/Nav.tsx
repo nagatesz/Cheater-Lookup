@@ -21,8 +21,8 @@ export default function Nav() {
           <div className="w-7 h-7 border border-crimson flex items-center justify-center glow-red">
             <Shield size={14} className="text-crimson" />
           </div>
-          <span className="font-barlow font-700 text-lg tracking-widest text-bright group-hover:text-crimson transition-colors">
-            VULTAR<span className="text-crimson mx-1">·</span>LOOKUP
+          <span className="font-barlow font-700 text-lg tracking-widest text-bright group-hover:text-crimson transition-colors lowercase">
+            clanner<span className="text-crimson mx-1">·</span>catch
           </span>
         </Link>
 

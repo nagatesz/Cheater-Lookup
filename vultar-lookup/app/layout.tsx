@@ -2,8 +2,8 @@ import type { Metadata } from 'next'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'VULTAR | Cheater Lookup',
-  description: 'Vultar of Imperium — Discord cheater lookup database',
+  title: 'clanner catch | Cheater Lookup',
+  description: 'clanner catch — Discord cheater lookup database',
   icons: { icon: '/favicon.ico' },
 }
 

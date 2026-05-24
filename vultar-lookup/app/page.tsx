@@ -10,21 +10,15 @@ export default function HomePage() {
         <div className="scanlines fixed inset-0 pointer-events-none" />
 
         {/* Hero */}
-        <div className="text-center max-w-2xl fade-up">
-          {/* Badge */}
-          <div className="inline-flex items-center gap-2 border border-[#1e1e30] bg-[#0f0f1a] px-3 py-1 text-xs font-mono text-steel mb-8">
-            <span className="w-1.5 h-1.5 rounded-full bg-crimson blink" />
-            VULTAR OF IMPERIUM — ANTI-CHEAT DIVISION
-          </div>
-
+        <div className="text-center max-w-2xl fade-up pt-12">
           {/* Title */}
           <h1 className="font-barlow font-700 text-6xl md:text-8xl tracking-tight mb-2 leading-none">
-            <span className="text-bright">CHEATER</span>
+            <span className="text-bright">CLANNER</span>
             <br />
-            <span className="text-crimson glow-red-text">LOOKUP</span>
+            <span className="text-crimson glow-red-text lowercase">catch</span>
           </h1>
           <p className="text-steel font-mono text-sm mt-6 mb-10 leading-relaxed">
-            Search Discord IDs against the Vultar database &amp; XTracker<br />
+            Search Discord IDs against the Clanner Catch databases &amp; XTracker<br />
             to identify known cheaters and rule-breakers.
           </p>
 
@@ -99,7 +93,7 @@ export default function HomePage() {
         </div>
 
         <p className="text-[#1e1e30] font-mono text-xs mt-16 fade-up-4">
-          VULTAR OF IMPERIUM © {new Date().getFullYear()} — DATA FROM XTRACKER + CLAN REPORTS
+          CLANNER CATCH © {new Date().getFullYear()} — DATA FROM XTRACKER + CLAN REPORTS
         </p>
       </main>
     </>

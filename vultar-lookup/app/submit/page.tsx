@@ -84,7 +84,7 @@ export default function SubmitPage() {
         <div className="panel p-10 max-w-md w-full text-center corner-tl corner-br relative fade-up">
           <CheckCircle size={40} className="text-green-400 mx-auto mb-4" />
           <h2 className="font-barlow font-700 text-2xl text-bright tracking-wide mb-2">SUBMITTED</h2>
-          <p className="text-steel font-rajdhani mb-6">Report received. It will be reviewed and added to the database.</p>
+          <p className="text-steel font-barlow mb-6">Report received. It will be reviewed and added to the database.</p>
           <button onClick={() => { setSuccess(false); setForm({ discord_id:'',username:'',roblox_username:'',server_name:'',reason:'',severity:'medium',submitted_by:'',notes:'' }); setEvidenceLinks(['']) }}
             className="font-mono text-xs text-crimson border border-crimson px-4 py-2 hover:bg-crimson hover:text-white transition-colors">
             SUBMIT ANOTHER
@@ -104,8 +104,8 @@ export default function SubmitPage() {
             <h1 className="font-barlow font-700 text-4xl tracking-wide text-bright">
               SUBMIT <span className="text-crimson">CHEATER</span>
             </h1>
-            <p className="text-steel font-rajdhani mt-2">
-              Report a known cheater to add them to the Vultar database. Only submit with evidence.
+            <p className="text-steel font-barlow mt-2">
+              Report a known cheater to add them to the Clanner Catch database. Only submit with evidence.
             </p>
           </div>
 
@@ -150,7 +150,7 @@ export default function SubmitPage() {
                         : 'border-[#1e1e30] hover:border-[#2a2a40] text-steel'
                     }`}>
                     <div className="font-mono font-700 text-xs tracking-widest">{opt.label}</div>
-                    <div className="font-rajdhani text-xs mt-0.5 opacity-70">{opt.desc}</div>
+                    <div className="font-barlow text-xs mt-0.5 opacity-70">{opt.desc}</div>
                   </button>
                 ))}
               </div>
