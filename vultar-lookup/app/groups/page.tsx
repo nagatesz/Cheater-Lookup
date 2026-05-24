@@ -56,13 +56,13 @@ export default function GroupsPage() {
         const d = await res.json()
         return {
           concurrency: d.concurrency > 0 ? d.concurrency : 10,
-          workerDelayMs: typeof d.workerDelayMs === 'number' ? d.workerDelayMs : 120,
+          workerDelayMs: typeof d.workerDelayMs === 'number' ? d.workerDelayMs : 2000,
         }
       }
     } catch {
       /* use default */
     }
-    return { concurrency: 10, workerDelayMs: 120 }
+    return { concurrency: 10, workerDelayMs: 2000 }
   }
 
   // Keep membersRef in sync

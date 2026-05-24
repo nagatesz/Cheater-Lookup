@@ -207,7 +207,7 @@ export async function lookupXTrackerByRobloxId(
   workerSlot?: number
 ): Promise<XTrackerResult> {
   const registry = await xtrackerFetchWithRetry('/api/registry/user', robloxId, workerSlot)
-  await new Promise(r => setTimeout(r, 50))
+  await new Promise(r => setTimeout(r, 500))
   const ownership = await xtrackerFetchWithRetry('/api/ownership/user', robloxId, workerSlot)
 
   const allEntries = [...registry.entries, ...ownership.entries]
